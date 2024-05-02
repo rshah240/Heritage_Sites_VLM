@@ -19,7 +19,7 @@ processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 app = FastAPI()
 
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="")
 
 def gujarati_to_english(gujarati_text):
     chat_completion = client.chat.completions.create(
