@@ -1,10 +1,11 @@
 import torch
-from transformers import AutoTokenizer, AutoProcessor, LlavaForConditionalGeneration, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoProcessor, LlavaForConditionalGeneration, BitsAndBytesConfig,\
+AutoModelForSeq2SeqLM
 from PIL import Image
 from fastapi import FastAPI
 import gradio as gr
 import os
-from openai import OpenAI
+import torch
 
 model_id = "rshah240/llava_historical_images"
 quantization_config = BitsAndBytesConfig(
@@ -19,34 +20,48 @@ processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 app = FastAPI()
 
-client = OpenAI(api_key="")
-
-def gujarati_to_english(gujarati_text):
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": f"Translate the following Gujarati text to English: {gujarati_text}",
-            }
-        ],
-        model="gpt-3.5-turbo",
-    )
-    response = chat_completion.choices[0].message.content
-    return response
 
 
-def english_to_gujarati(english_text):
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": f"Translate the following English text to Gujarati: {english_text}",
-            }
-        ],
-        model="gpt-3.5-turbo",
-    )
-    response_guj = chat_completion.choices[0].message.content
-    return response_guj
+def gujarati_to_english(gujarati_text: str) -> str:
+    """
+    Function to translate  Gujarati text to English.\n
+    Args:
+        gujarati_text: str = Gujarati Text
+    Returns:
+        question_english
+    """
+
+    tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", use_auth_token=False, src_lang= "gu_IN")
+    model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M", use_auth_token=False)
+
+    inputs = tokenizer(gujarati_text, return_tensors="pt")
+
+    translated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"], max_length=100)
+
+    question_english = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+
+    return question_english
+
+
+def english_to_gujarati(english_text: str):
+    """
+    Function to translate English to Gujarati
+    Args:
+        english_text: str = English Text
+    Returns:
+        answer_english
+    """
+
+    tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", use_auth_token=False, src_lang= "eng_Latn")
+    model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M", use_auth_token=False)
+
+    inputs = tokenizer(english_text, return_tensors="pt")
+
+    translated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id["guj_Gujr"], max_length=100)
+
+    answer_gujarati = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+
+    return answer_gujarati
 
 
 def get_answer(image: Image, question_gujarati: str) -> str:
@@ -63,7 +78,8 @@ def get_answer(image: Image, question_gujarati: str) -> str:
 
     prompt =f"USER: <image>\n{question_english} ASSISTANT:"
     inputs = processor(text=prompt, images=image, return_tensors="pt")
-    generate_ids = model.generate(**inputs, max_new_tokens=100)
+    # inputs = inputs.to(device)
+    generate_ids = model.generate(**inputs, max_new_tokens=200)
     answer = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
     answer_english = answer.split("ASSISTANT:")[-1]
 
